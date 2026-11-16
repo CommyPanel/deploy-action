@@ -1,0 +1,75 @@
+name: Deploy to CommyPanel
+description: Deploy (or apply changes to) an app on your own CommyPanel server with the commy command, wait for the result and fail the job if it fails.
+author: CommyPanel
+branding:
+  icon: upload-cloud
+  color: orange
+
+inputs:
+  app:
+    description: The app to deploy (its short name, as shown in the panel).
+    required: true
+  url:
+    description: The panel address, https only, for example https://panel.example.com.
+    required: true
+  token:
+    description: An API token. Pass it from a repository secret, never as plain text. A token limited to this one app with only the ability `apps:deploy` (and `apps:read` to wait) is enough.
+    required: true
+  command:
+    description: "deploy (build and release the latest code) or apply (make changed variables, volumes and links take effect without a build)."
+    required: false
+    default: deploy
+  wait:
+    description: Wait for the deployment and fail the job if it does not go live (true or false).
+    required: false
+    default: 'true'
+  timeout:
+    description: How long to wait, for example 15m or 900s.
+    required: false
+    default: 15m
+  version:
+    description: The commy version to use. Versions this action knows carry their checksums; for any other version also give `checksum`.
+    required: false
+    default: 0.1.0
+  checksum:
+    description: The SHA-256 of the commy binary for the runner's system, required only for a version this action does not know.
+    required: false
+    default: ''
+
+outputs:
+  deployment:
+    description: The number of the deployment that was started.
+    value: ${{ steps.run.outputs.deployment }}
+  status:
+    description: The final status (for example active, failed, rolled_back), or queued when wait is false.
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse to run for pull requests
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        # A deploy needs a token, and a pull request is code the repository's owner has not accepted yet.
+        case "$EVENT" in
+          pull_request|pull_request_target|pull_request_review|pull_request_review_comment)
+            echo "::error::Deploying from a pull request is not allowed. Deploy from a push to a protected branch, a release or a manual run."
+            exit 1 ;;
+        esac
+
+    - name: Install commy and deploy
+      id: run
+      shell: bash
+      env:
+        COMMY_TOKEN: ${{ inputs.token }}
+        INPUT_APP: ${{ inputs.app }}
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CHECKSUM: ${{ inputs.checksum }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/scripts/deploy.sh"
